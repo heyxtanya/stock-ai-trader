@@ -8,11 +8,11 @@ import yfinance as yf
 from stock_prediction_lstm import predict, format_feature
 from RLagent import process_stock
 from datetime import datetime
-from process_stock_data import get_stock_data, clean_csv_files
+from process_stock_data import get_data, format_data
 
-os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
-os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
-os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
+# os.environ['HTTP_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['HTTPS_PROXY'] = 'http://127.0.0.1:7890'
+# os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
 
 warnings.filterwarnings("ignore")
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -27,11 +27,11 @@ def get_data(ticker, start_date, end_date, progress=gr.Progress()):
     try:        
         # 获取并保存所有股票数据
         progress(0, desc="开始获取股票数据...")
-        stock_data = get_stock_data(ticker, start_date, end_date)
+        stock_data = get_data(ticker, start_date, end_date)
         progress(0.4, desc="计算技术指标...")
         stock_data.to_csv(temp_path)
         progress(0.7, desc="处理数据格式...")
-        clean_csv_files(temp_path)
+        format_data(temp_path)
         progress(1.0, desc="数据获取完成")
         return temp_path, "数据获取成功"
     except Exception as e:

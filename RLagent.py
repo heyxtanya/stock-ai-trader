@@ -8,16 +8,16 @@ import random
 from visualization import plot_trading_result
 sns.set()
 
-class Deep_Evolution_Strategy:
+class DeepEvolutionStrategy:
     """
-    深度进化策略类
+    Deep Evolution Strategy for optimizing trading model weights
     
-    参数:
-        weights: 模型权重
-        reward_function: 奖励函数
-        population_size: 种群大小
-        sigma: 扰动标准差
-        learning_rate: 学习率
+    Parameters:
+        weights: Initial model weights
+        reward_function: Function to evaluate performance
+        population_size: Number of individuals in population
+        sigma: Standard deviation for weight perturbation
+        learning_rate: Rate of weight updates
     """
     def __init__(self, weights, reward_function, population_size, sigma, learning_rate):
         self.weights = weights
@@ -26,247 +26,292 @@ class Deep_Evolution_Strategy:
         self.sigma = sigma
         self.learning_rate = learning_rate
 
-    def _get_weight_from_population(self, weights, population):
-        """生成扰动后的权重"""
-        weights_population = []
-        for index, i in enumerate(population):
-            jittered = self.sigma * i
-            weights_population.append(weights[index] + jittered)
-        return weights_population
-
     def get_weights(self):
-        """获取当前权重"""
-        return self.weights
+        """Return current model weights"""
+        return self.weights        
 
-    def train(self, epoch=100, print_every=1):
+    def generate_perturbed_weights(self, weights, perturbation):
+        """Generate weights with random perturbations"""
+        perturbed_weights = []
+        for i, p in enumerate(perturbation):
+            perturbed_weights.append(weights[i] + self.sigma * p)
+        return perturbed_weights
+
+    def train(self, epochs=100, print_frequency=1):
         """
-        训练模型
+        Train the model using evolutionary strategy
         
-        参数:
-            epoch: 训练轮数
-            print_every: 打印频率
+        Parameters:
+            epochs: Number of training iterations
+            print_frequency: How often to print progress
         """
-        lasttime = time.time()
-        for i in range(epoch):
+        start_time = time.time()
+        for epoch in range(epochs):
+            # Generate population of random perturbations
             population = []
             rewards = np.zeros(self.population_size)
-            # 生成种群
+            
             for k in range(self.population_size):
-                x = []
-                for w in self.weights:
-                    x.append(np.random.randn(*w.shape))
-                population.append(x)
-            # 计算每个个体的奖励
+                perturbation = []
+                for weight in self.weights:
+                    perturbation.append(np.random.randn(*weight.shape))
+                population.append(perturbation)
+            
+            # Evaluate each individual in population
             for k in range(self.population_size):
-                weights_population = self._get_weight_from_population(self.weights, population[k])
-                rewards[k] = self.reward_function(weights_population)
-            # 标准化奖励
+                perturbed_weights = self.generate_perturbed_weights(self.weights, population[k])
+                rewards[k] = self.reward_function(perturbed_weights)
+            
+            # Normalize rewards for stable training
             rewards = (rewards - np.mean(rewards)) / (np.std(rewards) + 1e-7)
-            # 更新权重
-            for index, w in enumerate(self.weights):
-                A = np.array([p[index] for p in population])
+            
+            # Update weights based on performance
+            for index, weight in enumerate(self.weights):
+                perturbations = np.array([p[index] for p in population])
                 self.weights[index] = (
-                    w
+                    weight
                     + self.learning_rate
                     / (self.population_size * self.sigma)
-                    * np.dot(A.T, rewards).T
+                    * np.dot(perturbations.T, rewards).T
                 )
-            if (i + 1) % print_every == 0:
-                print('iter %d. reward: %f' % (i + 1, self.reward_function(self.weights)))
-        print('time taken to train:', time.time() - lasttime, 'seconds')
+                
+            # Print progress
+            if (epoch + 1) % print_frequency == 0:
+                print(f'Epoch {epoch + 1}. Reward: {self.reward_function(self.weights):.4f}')
+                
+        print(f'Training completed in {time.time() - start_time:.2f} seconds')
 
 
-class Model:
+class TradingModel:
     """
-    神经网络模型类
+    Simple neural network model for trading decisions
     
-    参数:
-        input_size: 输入维度
-        layer_size: 隐藏层大小
-        output_size: 输出维度
+    Parameters:
+        input_size: Size of input features (window size)
+        hidden_size: Size of hidden layer
+        output_size: Number of possible actions (hold, buy, sell)
     """
-    def __init__(self, input_size, layer_size, output_size):
+    def __init__(self, input_size, hidden_size, output_size):
         self.weights = [
-            np.random.randn(input_size, layer_size),
-            np.random.randn(layer_size, output_size),
-            np.random.randn(1, layer_size),
+            np.random.randn(input_size, hidden_size),    
+            np.random.randn(hidden_size, output_size),   
+            np.random.randn(1, hidden_size),             
         ]
 
     def predict(self, inputs):
-        """预测函数"""
-        feed = np.dot(inputs, self.weights[0]) + self.weights[-1]
-        decision = np.dot(feed, self.weights[1])
-        return decision
+        """Forward pass to predict action probabilities"""
+        hidden = np.dot(inputs, self.weights[0]) + self.weights[2] 
+        output = np.dot(hidden, self.weights[1])
+        return output
 
     def get_weights(self):
-        """获取模型权重"""
+        """Return model weights"""
         return self.weights
 
     def set_weights(self, weights):
-        """设置模型权重"""
+        """Set model weights"""
         self.weights = weights
 
 
-class Agent:
+class TradingAgent:
     """
-    交易代理类
+    Trading agent that learns to buy/sell stocks
     
-    参数:
-        model: 预测模型
-        window_size: 时间窗口大小
-        trend: 价格序列
-        skip: 跳过步数
-        initial_money: 初始资金
-        ticker: 股票代码
+    Parameters:
+        model: Neural network model
+        window_size: Number of price points to consider
+        price_history: Historical price data
+        skip: Steps to skip between actions
+        initial_capital: Starting money
+        ticker: Stock symbol
+        save_dir: Directory to save results
     """
+    # Hyperparameters
     POPULATION_SIZE = 15
     SIGMA = 0.1
     LEARNING_RATE = 0.03
 
-    def __init__(self, model, window_size, trend, skip, initial_money, ticker, save_dir):
+    def __init__(self, model, window_size, price_history, skip, initial_capital, ticker, save_dir):
         self.model = model
         self.window_size = window_size
-        self.half_window = window_size // 2
-        self.trend = trend
+        self.price_history = price_history
         self.skip = skip
-        self.initial_money = initial_money
+        self.initial_capital = initial_capital
         self.ticker = ticker
         self.save_dir = save_dir
-        self.es = Deep_Evolution_Strategy(
+        
+        # Initialize evolution strategy
+        self.evolution_strategy = DeepEvolutionStrategy(
             self.model.get_weights(),
-            self.get_reward,
+            self.calculate_reward,
             self.POPULATION_SIZE,
             self.SIGMA,
             self.LEARNING_RATE,
         )
 
-    def act(self, sequence):
-        """根据当前状态选择行动"""
-        decision = self.model.predict(np.array(sequence))
+    def select_action(self, state):
+        """Choose action (0=hold, 1=buy, 2=sell) based on current state"""
+        decision = self.model.predict(np.array(state))
         return np.argmax(decision[0])
 
-    def get_state(self, t):
-        """获取当前状态"""
+    def get_state(self, time_index):
+        """Extract price changes for the window ending at time_index"""
         window_size = self.window_size + 1
-        d = t - window_size + 1
-        block = self.trend[d: t + 1] if d >= 0 else -d * [self.trend[0]] + self.trend[0: t + 1]
-        res = []
+        start_index = time_index - window_size + 1
+        
+        # Handle cases where we need data before the beginning
+        if start_index >= 0:
+            price_window = self.price_history[start_index: time_index + 1]
+        else:
+            # Pad with initial price
+            padding = -start_index * [self.price_history[0]]
+            price_window = padding + self.price_history[0: time_index + 1]
+            
+        # Calculate price changes
+        price_changes = []
         for i in range(window_size - 1):
-            res.append(block[i + 1] - block[i])
-        return np.array([res])
+            price_changes.append(price_window[i + 1] - price_window[i])
+            
+        return np.array([price_changes])
 
-    def get_reward(self, weights):
-        """计算奖励值"""
-        initial_money = self.initial_money
-        starting_money = initial_money
+    def calculate_reward(self, weights):
+        """Evaluate trading performance with given weights"""
+        # Setup simulation
+        capital = self.initial_capital
+        starting_capital = capital
         self.model.weights = weights
         state = self.get_state(0)
-        inventory = []
+        inventory = []  # Stocks owned
         
-        for t in range(0, len(self.trend) - 1, self.skip):
-            action = self.act(state)
+        # Simulate trading
+        for t in range(0, len(self.price_history) - 1, self.skip):
+            action = self.select_action(state)
             next_state = self.get_state(t + 1)
+            current_price = self.price_history[t]
 
-            if action == 1 and starting_money >= self.trend[t]:
-                inventory.append(self.trend[t])
-                starting_money -= self.trend[t]
+            # Buy action
+            if action == 1 and capital >= current_price:
+                inventory.append(current_price)
+                capital -= current_price
 
-            elif action == 2 and len(inventory):
+            # Sell action
+            elif action == 2 and len(inventory) > 0:
                 bought_price = inventory.pop(0)
-                starting_money += self.trend[t]
+                capital += current_price
 
             state = next_state
-        return ((starting_money - initial_money) / initial_money) * 100
+            
+        # Calculate percentage return
+        return ((capital - starting_capital) / starting_capital) * 100
 
-    def fit(self, iterations, checkpoint):
-        """训练代理"""
-        self.es.train(iterations, print_every=checkpoint)
+    def train(self, iterations, checkpoint):
+        """Train the trading agent"""
+        self.evolution_strategy.train(iterations, checkpoint)
 
-    def buy(self, save_dir):
-        """执行交易策略"""
-        initial_money = self.initial_money
+    def execute_strategy(self, save_dir):
+        """Run the trained strategy and record transactions"""
+        # Setup
+        capital = self.initial_capital
+        starting_capital = capital
         state = self.get_state(0)
-        starting_money = initial_money
-        states_sell = []
-        states_buy = []
+        buy_timestamps = []
+        sell_timestamps = []
         inventory = []
         transaction_history = []
 
-        for t in range(0, len(self.trend) - 1, self.skip):
-            action = self.act(state)
+        # Execute trading strategy
+        for t in range(0, len(self.price_history) - 1, self.skip):
+            action = self.select_action(state)
             next_state = self.get_state(t + 1)
+            current_price = self.price_history[t]
 
-            if action == 1 and initial_money >= self.trend[t]:
-                inventory.append(self.trend[t])
-                initial_money -= self.trend[t]
-                states_buy.append(t)
+            # Buy action
+            if action == 1 and capital >= current_price:
+                inventory.append(current_price)
+                capital -= current_price
+                buy_timestamps.append(t)
                 transaction_history.append({
                     'day': t,
                     'operate': 'buy',
-                    'price': self.trend[t],
+                    'price': current_price,
                     'investment': 0,
-                    'total_balance': initial_money
+                    'total_balance': capital
                 })
 
-            elif action == 2 and len(inventory):
+            # Sell action
+            elif action == 2 and len(inventory) > 0:
                 bought_price = inventory.pop(0)
-                initial_money += self.trend[t]
-                states_sell.append(t)
+                capital += current_price
+                sell_timestamps.append(t)
+                
+                # Calculate return on this trade
                 try:
-                    invest = ((self.trend[t] - bought_price) / bought_price) * 100
+                    trade_return = ((current_price - bought_price) / bought_price) * 100
                 except:
-                    invest = 0
+                    trade_return = 0
+                    
                 transaction_history.append({
                     'day': t,
                     'operate': 'sell',
-                    'price': self.trend[t],
-                    'investment': invest,
-                    'total_balance': initial_money
+                    'price': current_price,
+                    'investment': trade_return,
+                    'total_balance': capital
                 })
 
             state = next_state
 
-        # 保存交易历史
+        # Save transaction history
         df_transaction = pd.DataFrame(transaction_history)
         os.makedirs(f'{save_dir}/transactions', exist_ok=True)
         df_transaction.to_csv(f'{save_dir}/transactions/{self.ticker}_transactions.csv', index=False)
 
-        invest = ((initial_money - starting_money) / starting_money) * 100
-        total_gains = initial_money - starting_money
-        return states_buy, states_sell, total_gains, invest
+        # Calculate overall performance
+        total_return = ((capital - starting_capital) / starting_capital) * 100
+        total_profit = capital - starting_capital
+        
+        return buy_timestamps, sell_timestamps, total_profit, total_return
 
 
-def process_stock(ticker, save_dir, window_size = 30, initial_money = 10000, iterations=500):
+def process_stock(ticker, save_dir, window_size=30, initial_money=10000, iterations=200):
+    """Process a single stock with the trading agent"""
     try:
-        # 读取预测数据
+        # Load predicted price data
         df = pd.read_pickle(f'{save_dir}/predictions/{ticker}_predictions.pkl')
         print(f"\nProcessing {ticker}")
-        close = df.Prediction.values.tolist()
+        price_data = df.Prediction.values.tolist()
 
-        # 设置参数
-        window_size = window_size
-        skip = 1
-        initial_money = initial_money
+        # Configure trading parameters
+        skip = 1  # Process every day
 
-        # 创建模型和代理
-        model = Model(input_size=window_size, layer_size=500, output_size=3)
-        agent = Agent(model=model, window_size=window_size, trend=close, 
-                     skip=skip, initial_money=initial_money, ticker=ticker, save_dir=save_dir)
+        # Create model and agent
+        model = TradingModel(input_size=window_size, hidden_size=200, output_size=3)
+        agent = TradingAgent(
+            model=model, 
+            window_size=window_size, 
+            price_history=price_data, 
+            skip=skip, 
+            initial_capital=initial_money, 
+            ticker=ticker, 
+            save_dir=save_dir
+        )
         
-        # 训练代理
-        agent.fit(iterations=iterations, checkpoint=10)
+        # Train the agent
+        print(f"Training agent for {ticker}...")
+        agent.train(iterations=iterations, checkpoint=10)
 
-        # 执行交易并获取结果
-        states_buy, states_sell, total_gains, invest = agent.buy(save_dir)
+        # Execute trading strategy
+        print(f"Executing trading strategy for {ticker}...")
+        buy_times, sell_times, total_profit, percent_return = agent.execute_strategy(save_dir)
 
-        # 使用可视化工具绘制交易图
-        plot_trading_result(ticker, close, states_buy, states_sell, total_gains, invest, save_dir)
+        # Visualize results
+        plot_trading_result(ticker, price_data, buy_times, sell_times, total_profit, percent_return, save_dir)
         
+        # Return performance metrics
         return {
-            'total_gains': total_gains,
-            'investment_return': invest,
-            'trades_buy': len(states_buy),
-            'trades_sell': len(states_sell)
+            'total_profit': total_profit,
+            'percent_return': percent_return,
+            'buy_trades': len(buy_times),
+            'sell_trades': len(sell_times)
         }
         
     except Exception as e:
@@ -275,20 +320,29 @@ def process_stock(ticker, save_dir, window_size = 30, initial_money = 10000, ite
 
 
 def main():
-    """主函数：执行所有股票的交易策略"""
-    # 股票列表
+    """Main function to run the trading system on multiple stocks"""
+    # Stock portfolio to analyze
     tickers = [
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA',       # 科技
-        'JPM', 'BAC', 'C', 'WFC', 'GS',                # 金融
-        'JNJ', 'PFE', 'MRK', 'ABBV', 'BMY',            # 医药
-        'XOM', 'CVX', 'COP', 'SLB', 'BKR',             # 能源
-        'DIS', 'NFLX', 'CMCSA', 'NKE', 'SBUX',         # 消费
-        'CAT', 'DE', 'MMM', 'GE', 'HON'                # 工业
+        'GOOGL', # Technology
+        'GS',    # Finance
+        'ABBV',  # Healthcare
+        'COP',   # Energy
+        'SBUX',  # Consumer
+        'CAT'    # Industrial
     ]
     save_dir = 'results'
-    # 处理每只股票
+    
+    # Process each stock
+    results = {}
     for ticker in tickers:
-        process_stock(ticker, save_dir)
+        result = process_stock(ticker, save_dir)
+        if result:
+            results[ticker] = result
+    
+    # Print summary
+    print("\n=== Trading Results Summary ===")
+    for ticker, metrics in results.items():
+        print(f"{ticker}: Profit=${metrics['total_profit']:.2f} ({metrics['percent_return']:.2f}%)")
 
 
 if __name__ == "__main__":

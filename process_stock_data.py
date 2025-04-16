@@ -13,6 +13,16 @@ def tech_indicators(data, start=None, end=None):
         end: End date for relative performance calculation.
         return: Data with technical indicators.
     '''
+
+    # Ensure datetime index
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+
+    data = data.reset_index()
+    
+    data['Date'] = pd.to_datetime(data['Date'])
+    data = data.set_index('Date')
+
     # Setting index to datetime
     data['Year'] = data.index.year
     data['Month'] = data.index.month
@@ -44,8 +54,29 @@ def tech_indicators(data, start=None, end=None):
     
     # Compare with SPY(S&P 500 ETF) as relative performance
     if start and end:
-        compare = yf.download('SPY', start=start, end=end)['Close']
-        data['Relative_Performance'] = (data['Close'] / compare.values) * 100
+        try:
+            # Download SPY data
+            spy_data = yf.download('SPY', start=start, end=end)
+            
+            # Explicitly extract Close column
+            if isinstance(spy_data, pd.DataFrame) and 'Close' in spy_data.columns:
+                compare = spy_data['Close'].copy()  
+                # Ensure it's a Series not a DataFrame
+                if isinstance(compare, pd.DataFrame):
+                    compare = compare.iloc[:, 0]
+                    
+                # Reindex to match the data index
+                compare = compare.reindex(data.index, method='ffill')
+                
+                # Calculate relative performance
+                data['Relative_Performance'] = (data['Close'] / compare) * 100
+                print("Succssfully Cacluated Relative_Performance")
+            else:
+                raise ValueError("Cannot get the Close clo from SPY")
+        except Exception as e:
+            print(f"SPY Failed to Download: {str(e)}")
+            data['Relative_Performance'] = 100  
+        
     
     # ROC
     data['ROC'] = data['Close'].pct_change(periods=1) * 100
@@ -62,14 +93,38 @@ def tech_indicators(data, start=None, end=None):
     
     return data
 
-def format_data(file_name):
-    '''Function to format the downloaded CSV file.
-        file_name: Name of the CSV file to format.
-    '''
-    df = pd.read_csv(file_name) 
-    df = df.drop([0, 1]).reset_index(drop=True) 
-    df = df.rename(columns={'Price': 'Date'})    
-    df.to_csv(file_name, index=False)
+def save_clean_data(df, file_path):
+    """
+    Save data with proper format:
+    1. Keep Date as index
+    2. Ensure numeric types
+    3. Standardize CSV format
+    """
+    # Force Date column as index if not already datetime indexed
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df = df.set_index('Date')
+    
+    # Clean invalid characters from numeric columns and convert to float
+    numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+    for col in numeric_cols:
+        if col in df.columns:
+            # Remove currency symbols and commas
+            df[col] = df[col].replace(r'[\$,]', '', regex=True).astype(float)
+
+    
+    # Save to CSV with Date index and proper formatting
+    df.to_csv(file_path, index=True, index_label='Date')
+    print(f"[√] right data without extra headers → {os.path.abspath(file_path)}")
+
+# 不要了，因为 后续跑lstm 要求读 Date 列作为索引，但此函数生成的格式不匹配
+# def format_data(file_name):
+#     '''Function to format the downloaded CSV file.
+#         file_name: Name of the CSV file to format.
+#     '''
+#     df = pd.read_csv(file_name) 
+#     df = df.drop([0, 1]).reset_index(drop=True) 
+#     df = df.rename(columns={'Price': 'Date'})    
+#     df.to_csv(file_name, index=False)
 
 def main():
     '''
@@ -99,9 +154,16 @@ def main():
         try:
             data = yf.download(ticker, start=START, end=END)
             data_with_indicator = tech_indicators(data, START, END)
-            data_with_indicator.to_csv(f'{data_folder}/{ticker}.csv')
-            format_data(f'{data_folder}/{ticker}.csv')
-            print(f"Data of {ticker} sussessfully downloaded and processed.")
+            # Save to individual files
+            file_path = os.path.join(data_folder, f'{ticker}.csv') 
+            save_clean_data(data_with_indicator, file_path)
+            
+            # Verify file creation
+            if os.path.exists(file_path):
+                print(f"[√] {ticker} Raw Data has saved to file → {os.path.abspath(file_path)}")
+            else:
+                print(f"[×] {ticker} Raw Data failed to save")
+
         except Exception as e:
             print(f"{ticker} has error in process: {str(e)}")
     print("--------All Data Downloaded and Processed--------")

@@ -73,7 +73,13 @@ def load_stock_data(ticker, data_dir='data'):
     """
     file_path = os.path.join(data_dir, f'{ticker}.csv')
     data = pd.read_csv(file_path, index_col='Date', parse_dates=True)
+
+    if 'Relative_Performance' not in data.columns:
+        print(f"for {ticker} add Relative_Performance palceholder")
+        data['Relative_Performance'] = 100
+        
     return data
+   
 
 
 def extract_features_and_target(data):

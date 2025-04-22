@@ -302,7 +302,7 @@ class TradingAgent:
         """Update target network"""
         self.dqn_target_model.load_state_dict(self.dqn_model.state_dict())
 
-    def train(self, iterations=200, checkpoint=10):
+    def train(self, iterations=300, checkpoint=10):
         """Train the agent"""
         if self.algorithm == 'ES':
             # ES Training
@@ -454,13 +454,18 @@ class TradingAgent:
         return buy_timestamps, sell_timestamps, total_profit, total_return
 
 
-def process_stock(ticker, save_dir, window_size=30, initial_money=10000, iterations=200, algorithm='ES'):
+def process_stock(ticker, save_dir, window_size=30, initial_money=10000, iterations=300, algorithm='ES'):
     """Process a single stock using specified algorithm"""
     try:
-        # Load predicted price data
-        df = pd.read_pickle(f'{save_dir}/predictions/{ticker}_predictions.pkl')
-        print(f"\nUse {algorithm} to handle {ticker}")
-        price_data = df.Prediction.values.tolist()
+        # Load original price data from CSV
+        df = pd.read_csv(f'data/{ticker}.csv')
+        print(f"\nProcessing {ticker}")
+        # Convert Close column to float to ensure numeric operations work
+        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+        # Drop any rows with NaN values that couldn't be converted
+        df = df.dropna(subset=['Close'])
+        price_data = df.Close.values.tolist()
+
 
         # Configure trading parameters
         skip = 1  # Process every day
@@ -515,7 +520,7 @@ def process_stock(ticker, save_dir, window_size=30, initial_money=10000, iterati
         return None
 
 
-def compare_algorithms(ticker, save_dir, window_size=30, initial_money=10000, iterations=200):
+def compare_algorithms(ticker, save_dir, window_size=30, initial_money=10000, iterations=300):
     """Compare ES and DQN performance on the same stock"""
     # Run Evolution Strategy
     print("\n Run the Evolution Strategy...")
